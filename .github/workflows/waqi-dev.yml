@@ -14,7 +14,8 @@ jobs:
       WAQI_OUT: "data/dev/waqi_dev_${{ github.run_id }}.csv"
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -40,16 +41,16 @@ jobs:
         continue-on-error: true
         run: |
           python - << 'PY'
-import pandas as pd, os
-p = os.environ["WAQI_OUT"]
-print("CSV path:", p, "exists?", os.path.exists(p))
-if os.path.exists(p):
-    df = pd.read_csv(p)
-    print("shape:", df.shape)
-    print(df.head(5).to_string())
-PY
+          import pandas as pd, os
+          p = os.environ["WAQI_OUT"]
+          print("CSV path:", p, "exists?", os.path.exists(p))
+          if os.path.exists(p):
+              df = pd.read_csv(p)
+              print("shape:", df.shape)
+              print(df.head(5).to_string())
+          PY
 
-      - name: Validate CSV
+      - name: Validate CSV (soft)
         run: |
           python validate_csv.py --path "${{ env.WAQI_OUT }}" --mode soft
 
