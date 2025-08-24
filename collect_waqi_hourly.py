@@ -8,9 +8,17 @@ KEYWORD = os.getenv("WAQI_KEYWORD", "Bangkok")
 MAX_STATIONS = int(os.getenv("WAQI_MAX_STATIONS", "20"))
 OUT_CSV = os.getenv("WAQI_OUT", f"data/waqi_{datetime.utcnow().strftime('%Y-%m')}.csv")
 
+if not TOKEN:
+    print("WAQI_TOKEN is not set; skip collection.")
+    raise SystemExit(0)
+
 def search_stations(keyword: str, token: str, max_n=20):
     url = f"https://api.waqi.info/search/?keyword={keyword}&token={token}"
-    r = requests.get(url, timeout=20).json()
+    try:
+        r = requests.get(url, timeout=20).json()
+    except Exception as e:
+        print("search error:", e)
+        return pd.DataFrame()
     data = []
     if r.get("status") == "ok":
         for it in r["data"]:
@@ -30,7 +38,11 @@ def search_stations(keyword: str, token: str, max_n=20):
 
 def fetch_station(uid: int, token: str):
     url = f"https://api.waqi.info/feed/@{uid}/?token={token}"
-    r = requests.get(url, timeout=20).json()
+    try:
+        r = requests.get(url, timeout=20).json()
+    except Exception as e:
+        print("fetch error:", uid, e)
+        return None
     if r.get("status") != "ok":
         return None
     d = r["data"]
@@ -57,21 +69,20 @@ def fetch_station(uid: int, token: str):
     }
 
 def main():
-    assert TOKEN, "Please set WAQI_TOKEN (e.g., via GitHub Secret)."
     os.makedirs(os.path.dirname(OUT_CSV), exist_ok=True)
     st_df = search_stations(KEYWORD, TOKEN, MAX_STATIONS)
     if st_df.empty:
-        print("No stations found."); return
+        print("No stations found.")
+        return
     rows = []
     for uid in st_df["uid"].tolist():
-        try:
-            rec = fetch_station(uid, TOKEN)
-            if rec: rows.append(rec)
-            time.sleep(0.2)
-        except Exception as e:
-            print("fetch error:", uid, e)
+        rec = fetch_station(uid, TOKEN)
+        if rec:
+            rows.append(rec)
+        time.sleep(0.2)
     if not rows:
-        print("No data this round."); return
+        print("No data this round. (API not ok or no stations)")
+        return
     df = pd.DataFrame(rows)
     if "time_iso" in df.columns:
         df["time"] = pd.to_datetime(df["time_iso"], errors="coerce", utc=True).dt.tz_convert("Asia/Bangkok")

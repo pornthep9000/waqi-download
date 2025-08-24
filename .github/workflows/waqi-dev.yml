@@ -27,6 +27,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Check WAQI_TOKEN set
+        run: |
+          if [ -z "${{ secrets.WAQI_TOKEN }}" ]; then
+            echo "❌ WAQI_TOKEN secret is not set."
+            exit 1
+          else
+            echo "✅ WAQI_TOKEN is set."
+          fi
+
       - name: Collect (dev)
         env:
           WAQI_TOKEN: ${{ secrets.WAQI_TOKEN }}
@@ -40,21 +49,27 @@ jobs:
       - name: Inspect CSV head
         continue-on-error: true
         run: |
-          python - << 'PY'
-          import pandas as pd, os
-          p = os.environ["WAQI_OUT"]
-          print("CSV path:", p, "exists?", os.path.exists(p))
-          if os.path.exists(p):
-              df = pd.read_csv(p)
-              print("shape:", df.shape)
-              print(df.head(5).to_string())
-          PY
+          echo "WAQI_OUT=${{ env.WAQI_OUT }}"
+          if [ -f "${{ env.WAQI_OUT }}" ]; then
+            python - << 'PY'
+import os, pandas as pd
+p = os.environ["WAQI_OUT"]
+print("CSV path:", p, "exists?", os.path.exists(p))
+df = pd.read_csv(p)
+print("shape:", df.shape)
+print(df.head(5).to_string())
+PY
+          else
+            echo "CSV not found; skip inspect."
+          fi
 
       - name: Validate CSV (soft)
+        if: ${{ hashFiles(env.WAQI_OUT) != '' }}
         run: |
           python validate_csv.py --path "${{ env.WAQI_OUT }}" --mode soft
 
       - name: Compress to .gz
+        if: ${{ hashFiles(env.WAQI_OUT) != '' }}
         run: |
           gzip -c "${{ env.WAQI_OUT }}" > "${{ env.WAQI_OUT }}.gz"
 
@@ -62,6 +77,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "${{ env.WAQI_OUT }}" "${{ env.WAQI_OUT }}.gz"
+          git add -A
           git commit -m "DEV run: $(date -u +'%Y-%m-%d %H:%M:%SZ')" || echo "No changes"
           git push
