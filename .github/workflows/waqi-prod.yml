@@ -2,7 +2,7 @@ name: Collect WAQI (prod)
 
 on:
   schedule:
-    - cron: '5 * * * *'
+    - cron: '5 * * * *'   # ทุกชั่วโมง (UTC)
   workflow_dispatch:
 
 jobs:
@@ -53,24 +53,33 @@ jobs:
           echo "WAQI_OUT=${{ env.WAQI_OUT }}"
           if [ -f "${{ env.WAQI_OUT }}" ]; then
             python - << 'PY'
-import os, pandas as pd
-p = os.environ["WAQI_OUT"]
-print("CSV path:", p, "exists?", os.path.exists(p))
-df = pd.read_csv(p)
-print("shape:", df.shape)
-print(df.head(5).to_string())
-PY
+            import os, pandas as pd
+            p = os.environ["WAQI_OUT"]
+            print("CSV path:", p, "exists?", os.path.exists(p))
+            df = pd.read_csv(p)
+            print("shape:", df.shape)
+            print(df.head(5).to_string())
+            PY
           else
             echo "CSV not found; skip inspect."
           fi
 
+      - name: Check output exists
+        id: check_file
+        run: |
+          if [ -f "${{ env.WAQI_OUT }}" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Validate CSV (soft)
-        if: ${{ hashFiles(env.WAQI_OUT) != '' }}
+        if: ${{ steps.check_file.outputs.exists == 'true' }}
         run: |
           python validate_csv.py --path "${{ env.WAQI_OUT }}" --mode soft
 
       - name: Compress CSV to .gz
-        if: ${{ hashFiles(env.WAQI_OUT) != '' }}
+        if: ${{ steps.check_file.outputs.exists == 'true' }}
         run: |
           gzip -c "${{ env.WAQI_OUT }}" > "${{ env.WAQI_OUT }}.gz"
 
@@ -80,7 +89,7 @@ PY
           touch docs/.nojekyll
 
       - name: Build dashboard (optional)
-        if: ${{ hashFiles(env.WAQI_OUT) != '' }}
+        if: ${{ steps.check_file.outputs.exists == 'true' }}
         run: |
           if [ -f build_dashboard.py ]; then
             python build_dashboard.py
