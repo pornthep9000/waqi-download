@@ -1,0 +1,66 @@
+name: Collect WAQI (dev)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  collect-dev:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      WAQI_KEYWORD: "Bangkok"
+      WAQI_MAX_STATIONS: "5"
+      WAQI_OUT: "data/dev/waqi_dev_${{ github.run_id }}.csv"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Collect (dev)
+        env:
+          WAQI_TOKEN: ${{ secrets.WAQI_TOKEN }}
+          WAQI_KEYWORD: ${{ env.WAQI_KEYWORD }}
+          WAQI_MAX_STATIONS: ${{ env.WAQI_MAX_STATIONS }}
+          WAQI_OUT: ${{ env.WAQI_OUT }}
+        run: |
+          mkdir -p data/dev
+          python collect_waqi_hourly.py
+
+      - name: Inspect CSV head
+        continue-on-error: true
+        run: |
+          python - << 'PY'
+import pandas as pd, os
+p = os.environ["WAQI_OUT"]
+print("CSV path:", p, "exists?", os.path.exists(p))
+if os.path.exists(p):
+    df = pd.read_csv(p)
+    print("shape:", df.shape)
+    print(df.head(5).to_string())
+PY
+
+      - name: Validate CSV
+        run: |
+          python validate_csv.py --path "${{ env.WAQI_OUT }}" --mode soft
+
+      - name: Compress to .gz
+        run: |
+          gzip -c "${{ env.WAQI_OUT }}" > "${{ env.WAQI_OUT }}.gz"
+
+      - name: Commit & push (dev)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${{ env.WAQI_OUT }}" "${{ env.WAQI_OUT }}.gz"
+          git commit -m "DEV run: $(date -u +'%Y-%m-%d %H:%M:%SZ')" || echo "No changes"
+          git push
